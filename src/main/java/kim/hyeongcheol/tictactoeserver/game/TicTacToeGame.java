@@ -1,4 +1,4 @@
-package kim.hyeongcheol.tictactoeserver.domain;
+package kim.hyeongcheol.tictactoeserver.game;
 
 import lombok.Getter;
 

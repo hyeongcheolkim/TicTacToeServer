@@ -1,6 +1,6 @@
 package kim.hyeongcheol.tictactoeserver.service;
 
-import kim.hyeongcheol.tictactoeserver.domain.GameRoom;
+import kim.hyeongcheol.tictactoeserver.game.GameRoom;
 import kim.hyeongcheol.tictactoeserver.dto.GameMessage;
 import kim.hyeongcheol.tictactoeserver.dto.PlayerInfo;
 import kim.hyeongcheol.tictactoeserver.dto.PlayerRole;

@@ -1,6 +1,6 @@
 package kim.hyeongcheol.tictactoeserver.repository;
 
-import kim.hyeongcheol.tictactoeserver.domain.GameRoom;
+import kim.hyeongcheol.tictactoeserver.game.GameRoom;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
