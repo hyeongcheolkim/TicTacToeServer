@@ -2,23 +2,21 @@ package kim.hyeongcheol.tictactoeserver.service;
 
 import kim.hyeongcheol.tictactoeserver.dto.*;
 import kim.hyeongcheol.tictactoeserver.model.GameRoom;
+import kim.hyeongcheol.tictactoeserver.repository.GameRoomRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
 public class GameService {
 
     private final SimpMessagingTemplate messagingTemplate;
-    private final Map<String, GameRoom> gameRooms = new ConcurrentHashMap<>();
-    private final Map<String, String> userSessionToRoomId = new ConcurrentHashMap<>();
+    private final GameRoomRepository gameRoomRepository;
 
     private RoomStateDto mapToRoomStateDto(GameRoom room) {
         if (room == null) return null;
@@ -48,7 +46,7 @@ public class GameService {
     }
 
     public void getRoomList(String sessionId) {
-        List<RoomInfo> roomInfos = gameRooms.values().stream()
+        List<RoomInfo> roomInfos = gameRoomRepository.findAll().stream()
                 .map(room -> RoomInfo.builder()
                         .roomId(room.getRoomId())
                         .roomName(room.getRoomName())
@@ -68,14 +66,14 @@ public class GameService {
             sendError(sessionId, "방 제목은 1자 이상 50자 이하로 입력해주세요.");
             return;
         }
-        if (userSessionToRoomId.containsKey(sessionId)) {
+        if (gameRoomRepository.findRoomIdBySessionId(sessionId).isPresent()) {
             sendError(sessionId, "이미 참여 중인 방이 있습니다. 방을 나오신 후 다시 시도해주세요.");
             return;
         }
         String roomId = UUID.randomUUID().toString();
         GameRoom room = new GameRoom(roomId, roomName, nickname, sessionId);
-        gameRooms.put(roomId, room);
-        userSessionToRoomId.put(sessionId, roomId);
+        gameRoomRepository.save(room);
+        gameRoomRepository.linkSessionToRoom(sessionId, roomId);
         messagingTemplate.convertAndSendToUser(sessionId, "/queue/room/created", mapToRoomStateDto(room), createHeaders(sessionId));
     }
 
@@ -84,12 +82,12 @@ public class GameService {
             sendError(sessionId, "닉네임은 1자 이상 15자 이하로 입력해주세요.");
             return;
         }
-        GameRoom room = gameRooms.get(roomId);
+        GameRoom room = gameRoomRepository.findById(roomId).orElse(null);
         if (room == null) {
             sendError(sessionId, "존재하지 않는 방입니다.");
             return;
         }
-        if (userSessionToRoomId.containsKey(sessionId)) {
+        if (gameRoomRepository.findRoomIdBySessionId(sessionId).isPresent()) {
             sendError(sessionId, "이미 참여 중인 방이 있습니다. 방을 나오신 후 다시 시도해주세요.");
             return;
         }
@@ -98,7 +96,7 @@ public class GameService {
             return;
         }
         room.addPlayer(sessionId, nickname);
-        userSessionToRoomId.put(sessionId, roomId);
+        gameRoomRepository.linkSessionToRoom(sessionId, roomId);
         messagingTemplate.convertAndSendToUser(sessionId, "/queue/room/joined", mapToRoomStateDto(room), createHeaders(sessionId));
         GameMessage broadcastMessage = GameMessage.builder()
                 .type(GameMessage.MessageType.JOIN)
@@ -110,61 +108,64 @@ public class GameService {
     }
 
     public void processMessage(String roomId, GameMessage message, String sessionId) {
-        GameRoom room = gameRooms.get(roomId);
-        if (room == null) return;
-        String nickname = room.getPlayers().get(sessionId);
-        if (nickname == null) return;
+        gameRoomRepository.findById(roomId).ifPresent(room -> {
+            String nickname = room.getPlayers().get(sessionId);
+            if (nickname == null) return;
 
-        switch (message.getType()) {
-            case CHAT -> handleChatMessage(room, message, nickname, sessionId);
-            case READY, UNREADY -> handleReady(room, sessionId, message.getType());
-            case MOVE -> handleMove(room, sessionId, message.getMove().getIndex());
-            case KICK -> handleKick(room, nickname, message.getKickTargetSessionId(), sessionId);
-        }
+            switch (message.getType()) {
+                case CHAT -> handleChatMessage(room, message, nickname, sessionId);
+                case READY, UNREADY -> handleReady(room, sessionId, message.getType());
+                case MOVE -> handleMove(room, sessionId, message.getMove().getIndex());
+                case KICK -> handleKick(room, nickname, message.getKickTargetSessionId(), sessionId);
+            }
+        });
     }
 
     public void handleDisconnect(String sessionId) {
-        String roomId = userSessionToRoomId.remove(sessionId);
-        if (roomId == null) return;
-        GameRoom room = gameRooms.get(roomId);
-        if (room == null) return;
-        String nickname = room.getPlayers().get(sessionId);
-        if (nickname == null) return;
-        if (sessionId.equals(room.getHostSessionId())) {
-            gameRooms.remove(roomId);
-            room.getPlayers().keySet().stream()
-                    .filter(sid -> !sid.equals(sessionId))
-                    .forEach(userSessionToRoomId::remove);
-            GameMessage message = GameMessage.builder()
-                    .roomId(roomId)
-                    .type(GameMessage.MessageType.LEAVE)
-                    .content("방장이 나가서 방이 사라졌습니다.")
-                    .sender("SYSTEM")
-                    .build();
-            messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
-        } else {
-            if (room.getGameState() == GameRoom.GameState.PLAYING) {
-                room.setGameState(GameRoom.GameState.FINISHED);
-                room.getReadyPlayerSessionIds().clear();
-                GameMessage winMessage = GameMessage.builder()
+        gameRoomRepository.findRoomIdBySessionId(sessionId).ifPresent(roomId -> {
+            gameRoomRepository.unlinkSessionFromRoom(sessionId);
+            GameRoom room = gameRoomRepository.findById(roomId).orElse(null);
+            if (room == null) return;
+
+            String nickname = room.getPlayers().get(sessionId);
+            if (nickname == null) return;
+
+            if (sessionId.equals(room.getHostSessionId())) {
+                gameRoomRepository.deleteById(roomId);
+                room.getPlayers().keySet().stream()
+                        .filter(sid -> !sid.equals(sessionId))
+                        .forEach(gameRoomRepository::unlinkSessionFromRoom);
+                GameMessage message = GameMessage.builder()
                         .roomId(roomId)
-                        .type(GameMessage.MessageType.GAME_END)
-                        .content("상대방이 나가서 승리했습니다!")
+                        .type(GameMessage.MessageType.LEAVE)
+                        .content("방장이 나가서 방이 사라졌습니다.")
+                        .sender("SYSTEM")
+                        .build();
+                messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
+            } else {
+                if (room.getGameState() == GameRoom.GameState.PLAYING) {
+                    room.setGameState(GameRoom.GameState.FINISHED);
+                    room.getReadyPlayerSessionIds().clear();
+                    GameMessage winMessage = GameMessage.builder()
+                            .roomId(roomId)
+                            .type(GameMessage.MessageType.GAME_END)
+                            .content("상대방이 나가서 승리했습니다!")
+                            .roomState(mapToRoomStateDto(room))
+                            .build();
+                    messagingTemplate.convertAndSend("/topic/room/" + roomId, winMessage);
+                }
+                room.removePlayer(sessionId);
+                room.resetForRematch();
+                GameMessage leaveMessage = GameMessage.builder()
+                        .roomId(roomId)
+                        .type(GameMessage.MessageType.LEAVE)
+                        .content(nickname + "님이 나갔습니다.")
+                        .sender(nickname)
                         .roomState(mapToRoomStateDto(room))
                         .build();
-                messagingTemplate.convertAndSend("/topic/room/" + roomId, winMessage);
+                messagingTemplate.convertAndSend("/topic/room/" + roomId, leaveMessage);
             }
-            room.removePlayer(sessionId);
-            room.resetForRematch();
-            GameMessage leaveMessage = GameMessage.builder()
-                    .roomId(roomId)
-                    .type(GameMessage.MessageType.LEAVE)
-                    .content(nickname + "님이 나갔습니다.")
-                    .sender(nickname)
-                    .roomState(mapToRoomStateDto(room))
-                    .build();
-            messagingTemplate.convertAndSend("/topic/room/" + roomId, leaveMessage);
-        }
+        });
     }
 
     private void handleChatMessage(GameRoom room, GameMessage message, String nickname, String sessionId) {
@@ -245,7 +246,7 @@ public class GameService {
         if (targetSessionId != null && room.getPlayers().containsKey(targetSessionId)) {
             String targetNickname = room.getPlayers().get(targetSessionId);
             room.removePlayer(targetSessionId);
-            userSessionToRoomId.remove(targetSessionId);
+            gameRoomRepository.unlinkSessionFromRoom(targetSessionId);
             room.resetForRematch();
             GameMessage kickMessage = GameMessage.builder()
                     .roomId(room.getRoomId())
