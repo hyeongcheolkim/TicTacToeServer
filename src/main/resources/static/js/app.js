@@ -36,6 +36,7 @@ let currentRoomId = null;
 let currentRoomSubscription = null;
 let isReady = false;
 let mySessionId = null;
+let isReturningToLobby = false;
 
 function showScreen(screen) {
     nicknameScreen.style.display = 'none';
@@ -64,10 +65,19 @@ function onConnected(frame) {
         stompClient.subscribe('/user/queue/room/created', onRoomCreated);
         stompClient.subscribe('/user/queue/room/joined', onRoomJoined);
         stompClient.subscribe('/user/queue/lobby/rooms', onRoomListUpdate);
+        stompClient.subscribe('/user/queue/events', onPrivateEvent);
 
         refreshRooms();
     });
+
     stompClient.send("/app/requestSessionId", {});
+}
+
+function onPrivateEvent(payload) {
+    const message = JSON.parse(payload.body);
+    if (message.type === 'KICK') {
+        goToLobby(message.content);
+    }
 }
 
 function onError(error) { alert('STOMP 연결에 실패했습니다. Java 서버가 실행 중인지 확인해주세요: ' + error); }
@@ -122,21 +132,29 @@ function enterGameRoom(room) {
 }
 
 function onGameMessage(payload) {
+    if (isReturningToLobby) {
+        return;
+    }
     const message = JSON.parse(payload.body);
     switch (message.type) {
         case 'JOIN':
         case 'READY':
+        case 'LEAVE':
         case 'GAME_START':
         case 'GAME_UPDATE':
             if (message.content) addChatMessage(message.content, 'system');
+
+            if (message.type === 'LEAVE' && message.content.includes("방장이 나가서")) {
+                goToLobby(message.content);
+                return;
+            }
+
             updateRoomState(message.roomState);
-            break;
-        case 'LEAVE':
-        case 'KICK':
-            if (message.content) addChatMessage(message.content, 'system');
-            updateRoomState(message.roomState);
-            isReady = false;
-            readyButton.textContent = '준비';
+
+            if(message.type === 'LEAVE') {
+                isReady = false;
+                readyButton.textContent = '준비';
+            }
             break;
         case 'CHAT':
             const roleText = message.senderRole === 'HOST' ? '방장' : '손님';
@@ -169,10 +187,6 @@ function onGameMessage(payload) {
         case 'ERROR':
             alert(message.content);
             break;
-    }
-    if (message.type === 'LEAVE' && message.content.includes("방장이 나가서")) {
-        alert(message.content);
-        leaveRoom(true);
     }
 }
 
@@ -285,15 +299,39 @@ function kickPlayer() {
         }
     }
 }
-function leaveRoom(silent = false) { if (stompClient && stompClient.connected) { stompClient.disconnect(() => {}); } resetStateAndUI(silent); }
-function resetStateAndUI(silent) {
-    const previousNickname = currentNickname;
-    if (!silent) { alert("방에서 나왔습니다."); }
-    stompClient = null; currentRoomId = null; currentRoomSubscription = null; isReady = false; mySessionId = null;
+
+function goToLobby(alertMessage) {
+    isReturningToLobby = true;
+
+    if (alertMessage) {
+        alert(alertMessage);
+    }
+
+    if (currentRoomSubscription) {
+        currentRoomSubscription.unsubscribe();
+    }
+
+    currentRoomId = null;
+    currentRoomSubscription = null;
+    isReady = false;
+
     showScreen(lobbyScreen);
-    chatMessagesDiv.innerHTML = ''; boardDiv.innerHTML = ''; readyButton.textContent = '준비'; kickButton.style.display = 'none';
-    nicknameInput.value = previousNickname;
-    connect();
+
+    chatMessagesDiv.innerHTML = '';
+    boardDiv.innerHTML = '';
+    readyButton.textContent = '준비';
+    readyButton.disabled = false;
+    kickButton.style.display = 'none';
+    gameRoomNameH2.textContent = '';
+    player1InfoSpan.textContent = '대기중...';
+    player2InfoSpan.textContent = '대기중...';
+    gameStatusP.textContent = '';
+
+    refreshRooms();
+
+    setTimeout(() => {
+        isReturningToLobby = false;
+    }, 100);
 }
 
 function joinByCode() {
@@ -322,7 +360,9 @@ refreshRoomsButton.addEventListener('click', refreshRooms);
 sendChatButton.addEventListener('click', sendChatMessage);
 readyButton.addEventListener('click', toggleReady);
 kickButton.addEventListener('click', kickPlayer);
-leaveRoomButton.addEventListener('click', () => leaveRoom(false));
+leaveRoomButton.addEventListener('click', () => {
+    goToLobby("방에서 나왔습니다.");
+});
 joinByCodeButton.addEventListener('click', joinByCode);
 copyRoomCodeButton.addEventListener('click', copyRoomCode);
 
