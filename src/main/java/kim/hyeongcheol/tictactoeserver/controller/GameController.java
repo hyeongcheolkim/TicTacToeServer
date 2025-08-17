@@ -7,7 +7,7 @@ import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.messaging.simp.annotation.SubscribeMapping;
+import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
 
 import java.util.Map;
@@ -18,7 +18,8 @@ public class GameController {
 
     private final GameService gameService;
 
-    @SubscribeMapping("/user/queue/session")
+    @MessageMapping("/requestSessionId")
+    @SendToUser("/queue/session")
     public String getSessionId(SimpMessageHeaderAccessor headerAccessor) {
         return headerAccessor.getSessionId();
     }
