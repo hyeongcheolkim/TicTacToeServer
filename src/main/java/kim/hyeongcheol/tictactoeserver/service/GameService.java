@@ -1,7 +1,7 @@
 package kim.hyeongcheol.tictactoeserver.service;
 
 import kim.hyeongcheol.tictactoeserver.dto.*;
-import kim.hyeongcheol.tictactoeserver.model.GameRoom;
+import kim.hyeongcheol.tictactoeserver.domain.GameRoom;
 import kim.hyeongcheol.tictactoeserver.repository.GameRoomRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
@@ -110,7 +110,8 @@ public class GameService {
     public void processMessage(String roomId, GameMessage message, String sessionId) {
         gameRoomRepository.findById(roomId).ifPresent(room -> {
             String nickname = room.getPlayers().get(sessionId);
-            if (nickname == null) return;
+            if (nickname == null)
+                return;
 
             switch (message.getType()) {
                 case CHAT -> handleChatMessage(room, message, nickname, sessionId);
@@ -125,10 +126,12 @@ public class GameService {
         gameRoomRepository.findRoomIdBySessionId(sessionId).ifPresent(roomId -> {
             gameRoomRepository.unlinkSessionFromRoom(sessionId);
             GameRoom room = gameRoomRepository.findById(roomId).orElse(null);
-            if (room == null) return;
+            if (room == null)
+                return;
 
             String nickname = room.getPlayers().get(sessionId);
-            if (nickname == null) return;
+            if (nickname == null)
+                return;
 
             if (sessionId.equals(room.getHostSessionId())) {
                 gameRoomRepository.deleteById(roomId);
@@ -214,7 +217,9 @@ public class GameService {
     }
 
     private void handleMove(GameRoom room, String sessionId, int index) {
-        if (room.getGame() == null || room.getGameState() != GameRoom.GameState.PLAYING) return;
+        if (room.getGame() == null || room.getGameState() != GameRoom.GameState.PLAYING)
+            return;
+
         boolean moveResult = room.getGame().makeMove(index, sessionId);
         if (moveResult) {
             GameMessage.GameMessageBuilder gameUpdateBuilder = GameMessage.builder().roomId(room.getRoomId());
@@ -242,7 +247,9 @@ public class GameService {
             sendError(kickerSessionId, "게임 중에는 상대를 추방할 수 없습니다.");
             return;
         }
-        if (!kickerSessionId.equals(room.getHostSessionId())) return;
+        if (!kickerSessionId.equals(room.getHostSessionId()))
+            return;
+
         if (targetSessionId != null && room.getPlayers().containsKey(targetSessionId)) {
             String targetNickname = room.getPlayers().get(targetSessionId);
             room.removePlayer(targetSessionId);
@@ -272,6 +279,7 @@ public class GameService {
         if (sessionId != null) {
             headerAccessor.setSessionId(sessionId);
         }
+
         headerAccessor.setLeaveMutable(true);
         return headerAccessor.getMessageHeaders();
     }

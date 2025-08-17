@@ -1,6 +1,6 @@
 package kim.hyeongcheol.tictactoeserver.repository;
 
-import kim.hyeongcheol.tictactoeserver.model.GameRoom;
+import kim.hyeongcheol.tictactoeserver.domain.GameRoom;
 
 import java.util.List;
 import java.util.Optional;

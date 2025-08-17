@@ -1,4 +1,4 @@
-package kim.hyeongcheol.tictactoeserver.model;
+package kim.hyeongcheol.tictactoeserver.domain;
 
 import lombok.Getter;
 import lombok.Setter;

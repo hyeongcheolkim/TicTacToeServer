@@ -1,6 +1,6 @@
 package kim.hyeongcheol.tictactoeserver.dto;
 
-import kim.hyeongcheol.tictactoeserver.model.GameRoom;
+import kim.hyeongcheol.tictactoeserver.domain.GameRoom;
 import lombok.Builder;
 import lombok.Data;
 
