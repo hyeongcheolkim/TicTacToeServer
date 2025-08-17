@@ -55,23 +55,18 @@ function connect() {
 }
 
 function onConnected(frame) {
-    // 1. 서버로부터 세션 ID 응답을 받을 주소를 먼저 구독합니다.
     stompClient.subscribe('/user/queue/session', (payload) => {
         mySessionId = payload.body;
         console.log("세션 ID를 성공적으로 받았습니다:", mySessionId);
 
-        // 3. 세션 ID를 받은 후에 나머지 초기화 로직을 실행합니다.
         showScreen(lobbyScreen);
         stompClient.subscribe('/user/queue/errors', onErrorMessage);
         stompClient.subscribe('/user/queue/room/created', onRoomCreated);
         stompClient.subscribe('/user/queue/room/joined', onRoomJoined);
         stompClient.subscribe('/user/queue/lobby/rooms', onRoomListUpdate);
 
-        // 4. 이제 방 목록을 안전하게 요청할 수 있습니다.
         refreshRooms();
     });
-
-    // 2. 세션 ID를 달라고 서버에 메시지를 보냅니다. (서버의 @MessageMapping("/requestSessionId") 호출)
     stompClient.send("/app/requestSessionId", {});
 }
 
@@ -161,15 +156,14 @@ function onGameMessage(payload) {
                 resultText = "무승부입니다!";
             }
             addChatMessage(`게임 종료: ${resultText}`, 'system');
-            updateRoomState(room); // 1. 화면 업데이트 요청 (보드 포함)
+            updateRoomState(room);
 
-            // 2. 브라우저가 화면을 그릴 시간을 잠깐 준 뒤에 alert를 실행
             setTimeout(() => {
                 alert(resultText);
                 readyButton.textContent = '준비';
                 readyButton.disabled = false;
                 isReady = false;
-            }, 50); // 50ms = 0.05초 지연. 사람이 인지하기 어려운 짧은 시간입니다.
+            }, 50);
 
             break;
         case 'ERROR':
